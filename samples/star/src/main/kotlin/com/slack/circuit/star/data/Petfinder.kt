@@ -190,12 +190,12 @@ class TokenManager(private val api: PetfinderAuthApi, private val tokenStorage: 
     val (tokenType, expiration, token) =
       tokenStorage.getAuthData()
         ?: run {
-          refreshToken()
+          refreshToken(null)
           return authenticate(request, isAfterRefresh)
         }
     if (Instant.now().isAfter(expiration)) {
       check(!isAfterRefresh)
-      refreshToken()
+      refreshToken(token)
       return authenticate(request, isAfterRefresh)
     } else {
       newBuilder.addHeader("Authorization", "$tokenType $token")
@@ -204,9 +204,17 @@ class TokenManager(private val api: PetfinderAuthApi, private val tokenStorage: 
     return newBuilder.build()
   }
 
-  private suspend fun refreshToken() =
+  private suspend fun refreshToken(expiredToken: String?) =
     mutex.withLock {
       println("INFO: Refreshing token")
+
+      if (expiredToken != null) {
+        if (expiredToken != tokenStorage.getAuthData()?.token) {
+          // We've already re-authed so nothing else to do
+          // This is necessary because something
+          return
+        }
+      }
 
       when (val result = api.authenticate()) {
         is ApiResult.Success -> tokenStorage.updateAuthData(result.value)
